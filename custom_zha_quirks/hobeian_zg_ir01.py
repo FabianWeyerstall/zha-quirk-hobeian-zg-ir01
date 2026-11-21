@@ -24,6 +24,18 @@ Learning:  zha.issue_zigbee_cluster_command  cluster 0xE004 (57348), command 1
            last_learned_ir_code (0x0000) of cluster 0xE004.
 Sending:   cluster 0xE004, command 2 (IRSend) with params {"code": "..."},
            optional "freq" (Hz, default 38000) and "repeats" (default 0).
+
+Credits and thanks:
+  The ZG-IR01 specifics in this quirk (sequence 0, 50-byte chunks, the frame
+  0x00 retry, ignoring stale 0x04 frames and the Broadlink code handling) are
+  taken from the Zigbee2MQTT project, zigbee-herdsman-converters
+  (https://github.com/Koenkk/zigbee-herdsman-converters, src/devices/hobeian.ts
+  and src/lib/zosung.ts, MIT license). Many thanks to Koenkk and all
+  Zigbee2MQTT contributors for reverse-engineering this device and the Zosung
+  IR protocol - without their groundwork this quirk would not exist.
+  The base protocol implementation comes from zha-device-handlers
+  (zhaquirks/tuya/ts1201.py, inspired by @mak-42's zosung.js); thanks to its
+  contributors as well.
 """
 
 from __future__ import annotations

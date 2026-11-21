@@ -96,10 +96,22 @@ pytest -q tests
 The tests run the quirk against zha-quirks 2.4.1 / zha 2.4.3: signature match, Tuya ↔ Broadlink
 conversion, a real learned code, and the full send/learn frame exchange.
 
-## Credits
+## Credits and thanks
 
-Protocol work by the zha-device-handlers (`ts1201.py`) and Zigbee2MQTT (`zosung.ts`, `hobeian.ts`)
-contributors. License: Apache-2.0, like zha-device-handlers.
+**A big thank you to [Zigbee2MQTT](https://www.zigbee2mqtt.io/)** – Koenkk and all contributors of
+[zigbee-herdsman-converters](https://github.com/Koenkk/zigbee-herdsman-converters). Everything that
+makes this quirk work on the ZG-IR01 (sequence 0, 50-byte chunks, the start-frame retry, ignoring
+stale end frames, the Broadlink code handling) was taken from their `src/devices/hobeian.ts` and
+`src/lib/zosung.ts`. We built on their reverse-engineering of this device and the Zosung IR protocol;
+without that groundwork this quirk would not exist. Zigbee2MQTT's converters are MIT licensed.
+
+Thanks as well to the [zha-device-handlers](https://github.com/zigpy/zha-device-handlers) contributors
+for the TS1201 Zosung implementation (`zhaquirks/tuya/ts1201.py`, inspired by @mak-42's `zosung.js`)
+that this quirk extends.
+
+License: Apache-2.0, like zha-device-handlers.
+
+*Danke an Zigbee2MQTT:* Die gerätespezifischen Details stammen aus deren Arbeit. Ohne ihre Vorarbeit gäbe es diesen Quirk nicht.
 
 ---
 
