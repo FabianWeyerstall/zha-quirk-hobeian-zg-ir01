@@ -1,0 +1,475 @@
+# Home Assistant package: IR remote for HOBEIAN ZG-IR01 (ZHA + custom quirk)
+# Put this file into /config/packages/ and enable packages in configuration.yaml:
+#   homeassistant:
+#     packages: !include_dir_named packages
+# You also need a Local To-do list named "IR-Codes" (todo.ir_codes): Settings -> Devices & services -> Add integration -> Local To-do.
+# Rename sensor.YOUR_IR_REMOTE_*_battery to your battery sensors.
+input_select:
+  ir_gerat:
+    name: IR Gerät
+    icon: mdi:remote-tv
+    options:
+    - Receiver
+    - TV
+    - LED-Lampe
+    - Sonstiges
+  ir_sender:
+    name: IR Sender
+    icon: mdi:access-point
+    options:
+    - Alle
+    - 'Zigbee IR Remote #1'
+    - 'Zigbee IR Remote #2'
+  ir_tasten_receiver:
+    name: IR Tasten Receiver
+    options:
+    - – noch keine Codes –
+  ir_tasten_tv:
+    name: IR Tasten TV
+    options:
+    - – noch keine Codes –
+  ir_tasten_led_lampe:
+    name: IR Tasten LED-Lampe
+    options:
+    - – noch keine Codes –
+  ir_tasten_sonstiges:
+    name: IR Tasten Sonstiges
+    options:
+    - – noch keine Codes –
+  ir_sender_receiver:
+    name: IR Sender Receiver
+    icon: mdi:access-point
+    options:
+    - Standard
+    - Alle
+    - 'Zigbee IR Remote #1'
+    - 'Zigbee IR Remote #2'
+  ir_sender_tv:
+    name: IR Sender TV
+    icon: mdi:access-point
+    options:
+    - Standard
+    - Alle
+    - 'Zigbee IR Remote #1'
+    - 'Zigbee IR Remote #2'
+  ir_sender_led_lampe:
+    name: IR Sender LED-Lampe
+    icon: mdi:access-point
+    options:
+    - Standard
+    - Alle
+    - 'Zigbee IR Remote #1'
+    - 'Zigbee IR Remote #2'
+  ir_sender_sonstiges:
+    name: IR Sender Sonstiges
+    icon: mdi:access-point
+    options:
+    - Standard
+    - Alle
+    - 'Zigbee IR Remote #1'
+    - 'Zigbee IR Remote #2'
+input_text:
+  ir_tastenname:
+    name: IR Tastenname
+    max: 40
+  ir_status:
+    name: IR Status
+    max: 255
+script:
+  ir_code_lernen:
+    alias: IR Code lernen
+    description: Startet den Lernmodus am gewählten ZG-IR01 (bei 'Alle' am ersten), wartet bis zu 60 s auf den Code und speichert ihn unter 'Gerät | Tastenname' in der Aufgabenliste IR-Codes. Gleicher Name
+      überschreibt. Gelernte Codes funktionieren auf allen ZG-IR01.
+    icon: mdi:record-rec
+    mode: single
+    max_exceeded: silent
+    fields:
+      geraet:
+        name: Gerät
+        description: Leer lassen = Auswahl aus input_select.ir_gerat
+        selector:
+          text: {}
+      taste:
+        name: Tastenname
+        description: Leer lassen = Text aus input_text.ir_tastenname
+        selector:
+          text: {}
+      sender:
+        name: Sender
+        description: Blaster, der lernt. Leer = Auswahl aus input_select.ir_sender; bei 'Alle' der erste
+        selector:
+          text: {}
+    sequence:
+    - variables:
+        ger: '{{ geraet | default(states(''input_select.ir_gerat''), true) | trim }}'
+        name: '{{ taste | default(states(''input_text.ir_tastenname''), true) | trim }}'
+        eintrag: '{{ ger ~ '' | '' ~ name }}'
+        ziel: '{{ sender | default(states(''input_select.ir_sender''), true) | trim }}'
+        blaster: '{% set ns = namespace(m={}) %}{% for d in integration_entities(''zha'') | map(''device_id'') | reject(''none'') | unique %}{% if device_attr(d, ''model'') == ''ZG-IR01'' %}{% set ns.m
+          = dict(ns.m, **{(device_attr(d, ''name_by_user'') or device_attr(d, ''name'')): (device_attr(d, ''identifiers'') | list | first)[1]}) %}{% endif %}{% endfor %}{{ ns.m }}'
+        lern_name: '{{ ziel if ziel in blaster else (blaster.keys() | list | sort | first) }}'
+        ieee: '{{ blaster[lern_name] }}'
+    - if:
+      - condition: template
+        value_template: '{{ name in ['''', ''unknown'', ''unavailable''] }}'
+      then:
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.ir_status
+        data:
+          value: Bitte zuerst einen Tastennamen eingeben.
+      - stop: Kein Tastenname
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.ir_status
+      data:
+        value: 'Lernmodus an {{ lern_name }}: Fernbedienung darauf richten und ''{{ name }}'' drücken (60 s) …'
+    - action: zha.issue_zigbee_cluster_command
+      data:
+        ieee: '{{ ieee }}'
+        endpoint_id: 1
+        cluster_id: 57348
+        cluster_type: in
+        command: 1
+        command_type: server
+        params:
+          on_off: true
+    - wait_for_trigger:
+      - trigger: event
+        event_type: zha_event
+        event_data:
+          command: ir_code_learned
+      timeout:
+        seconds: 60
+      continue_on_timeout: true
+    - if:
+      - condition: template
+        value_template: '{{ wait.trigger is none }}'
+      then:
+      - action: zha.issue_zigbee_cluster_command
+        data:
+          ieee: '{{ ieee }}'
+          endpoint_id: 1
+          cluster_id: 57348
+          cluster_type: in
+          command: 1
+          command_type: server
+          params:
+            on_off: false
+        continue_on_error: true
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.ir_status
+        data:
+          value: Kein Code empfangen. Bitte nochmal versuchen.
+      - stop: Zeitüberschreitung
+    - variables:
+        code: '{{ wait.trigger.event.data.args.code | default(wait.trigger.event.data.params.code, true) | default('''', true) }}'
+    - if:
+      - condition: template
+        value_template: '{{ code == '''' }}'
+      then:
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.ir_status
+        data:
+          value: Code kam leer an. Bitte nochmal lernen.
+      - stop: Leerer Code
+        error: true
+    - action: todo.get_items
+      target:
+        entity_id: todo.ir_codes
+      data:
+        status:
+        - needs_action
+        - completed
+      response_variable: liste
+    - if:
+      - condition: template
+        value_template: '{{ eintrag in liste[''todo.ir_codes''][''items''] | map(attribute=''summary'') | list }}'
+      then:
+      - action: todo.update_item
+        target:
+          entity_id: todo.ir_codes
+        data:
+          item: '{{ eintrag }}'
+          description: '{{ code }}'
+          status: needs_action
+      else:
+      - action: todo.add_item
+        target:
+          entity_id: todo.ir_codes
+        data:
+          item: '{{ eintrag }}'
+          description: '{{ code }}'
+    - action: script.ir_listen_aktualisieren
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.ir_tastenname
+      data:
+        value: ''
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.ir_status
+      data:
+        value: 'Gespeichert: {{ eintrag }}'
+  ir_code_senden:
+    alias: IR Code abspielen
+    description: 'Spielt einen gespeicherten IR-Code ab. Sender-Reihenfolge: Feld ''sender'' > fester Sender des Geräts (input_select.ir_sender_<gerät>, außer ''Standard'') > globale Auswahl input_select.ir_sender.
+      ''Alle'' = alle ZG-IR01 gleichzeitig.'
+    icon: mdi:play-circle-outline
+    mode: parallel
+    max: 10
+    fields:
+      geraet:
+        name: Gerät
+        required: true
+        example: TV
+        selector:
+          text: {}
+      taste:
+        name: Taste
+        description: Leer lassen = Auswahl aus input_select.ir_tasten_<gerät>
+        example: Power
+        selector:
+          text: {}
+      sender:
+        name: Sender
+        description: Name des Blasters oder 'Alle'. Leer = fester Sender des Geräts, sonst globale Auswahl
+        example: Alle
+        selector:
+          text: {}
+      wiederholungen:
+        name: Wiederholungen
+        description: Wie oft der Code zusätzlich gesendet wird
+        default: 0
+        selector:
+          number:
+            min: 0
+            max: 5
+            mode: box
+    sequence:
+    - variables:
+        name: '{{ taste | default(states(''input_select.ir_tasten_'' ~ (geraet | slugify)), true) | trim }}'
+        eintrag: '{{ geraet ~ '' | '' ~ name }}'
+        geraete_sender: '{{ states(''input_select.ir_sender_'' ~ (geraet | slugify)) }}'
+        ziel: '{% set s = sender | default('''', true) | trim %}{% if s %}{{ s }}{% elif geraete_sender not in [''Standard'', ''unknown'', ''unavailable'', ''''] %}{{ geraete_sender }}{% else %}{{ states(''input_select.ir_sender'')
+          }}{% endif %}'
+        blaster: '{% set ns = namespace(m={}) %}{% for d in integration_entities(''zha'') | map(''device_id'') | reject(''none'') | unique %}{% if device_attr(d, ''model'') == ''ZG-IR01'' %}{% set ns.m
+          = dict(ns.m, **{(device_attr(d, ''name_by_user'') or device_attr(d, ''name'')): (device_attr(d, ''identifiers'') | list | first)[1]}) %}{% endif %}{% endfor %}{{ ns.m }}'
+        ziele: '{{ blaster.values() | list if ziel in [''Alle'', '''', ''unknown'', ''unavailable''] else ([blaster[ziel]] if ziel in blaster else []) }}'
+    - if:
+      - condition: template
+        value_template: '{{ ziele | count == 0 }}'
+      then:
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.ir_status
+        data:
+          value: 'Sender nicht gefunden: {{ ziel }}'
+      - stop: Kein Sender
+    - action: todo.get_items
+      target:
+        entity_id: todo.ir_codes
+      data:
+        status:
+        - needs_action
+        - completed
+      response_variable: liste
+    - variables:
+        code: '{{ (liste[''todo.ir_codes''][''items''] | selectattr(''summary'', ''eq'', eintrag) | map(attribute=''description'') | first) | default('''', true) }}'
+    - if:
+      - condition: template
+        value_template: '{{ code == '''' }}'
+      then:
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.ir_status
+        data:
+          value: 'Kein Code gespeichert für: {{ eintrag }}'
+      - stop: Kein Code gefunden
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.ir_status
+      data:
+        value: Sende {{ eintrag }} → {{ ziel if ziele | count == 1 else 'alle (' ~ (ziele | count) ~ ')' }} …
+    - repeat:
+        for_each: '{{ ziele }}'
+        sequence:
+        - action: script.turn_on
+          target:
+            entity_id: script.ir_sende_an_blaster
+          data:
+            variables:
+              ieee: '{{ repeat.item }}'
+              code: '{{ code }}'
+              wiederholungen: '{{ wiederholungen | default(0) | int(0) }}'
+    - wait_template: '{{ is_state(''script.ir_sende_an_blaster'', ''off'') }}'
+      timeout:
+        seconds: 60
+      continue_on_timeout: true
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.ir_status
+      data:
+        value: '{{ ''Gesendet: '' ~ eintrag if wait.completed else ''Sender antwortet nicht: '' ~ eintrag }}'
+  ir_sende_an_blaster:
+    alias: IR an einen Blaster senden (intern)
+    description: 'Interner Baustein von script.ir_code_senden: schickt einen fertigen Code an genau einen ZG-IR01.'
+    icon: mdi:access-point-network
+    mode: parallel
+    max: 10
+    fields:
+      ieee:
+        name: IEEE
+        required: true
+        selector:
+          text: {}
+      code:
+        name: Code
+        required: true
+        selector:
+          text: {}
+      wiederholungen:
+        name: Wiederholungen
+        default: 0
+        selector:
+          number:
+            min: 0
+            max: 5
+            mode: box
+    sequence:
+    - action: zha.issue_zigbee_cluster_command
+      data:
+        ieee: '{{ ieee }}'
+        endpoint_id: 1
+        cluster_id: 57348
+        cluster_type: in
+        command: 2
+        command_type: server
+        params:
+          code: '{{ code }}'
+          repeats: '{{ wiederholungen | default(0) | int(0) }}'
+  ir_code_loeschen:
+    alias: IR Code löschen
+    description: Löscht eine Taste eines Geräts aus der Aufgabenliste IR-Codes.
+    icon: mdi:delete-outline
+    mode: queued
+    fields:
+      geraet:
+        name: Gerät
+        required: true
+        example: TV
+        selector:
+          text: {}
+      taste:
+        name: Taste
+        description: Leer lassen = Auswahl aus input_select.ir_tasten_<gerät>
+        selector:
+          text: {}
+    sequence:
+    - variables:
+        name: '{{ taste | default(states(''input_select.ir_tasten_'' ~ (geraet | slugify)), true) | trim }}'
+        eintrag: '{{ geraet ~ '' | '' ~ name }}'
+    - action: todo.remove_item
+      target:
+        entity_id: todo.ir_codes
+      data:
+        item: '{{ eintrag }}'
+      continue_on_error: true
+    - action: script.ir_listen_aktualisieren
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.ir_status
+      data:
+        value: 'Gelöscht: {{ eintrag }}'
+  ir_listen_aktualisieren:
+    alias: IR Tastenlisten aktualisieren
+    description: Baut die Tastenlisten je Gerät aus todo.ir_codes neu auf und trägt neu gekoppelte ZG-IR01 in die Senderauswahlen ein.
+    icon: mdi:format-list-bulleted
+    mode: queued
+    sequence:
+    - action: todo.get_items
+      target:
+        entity_id: todo.ir_codes
+      data:
+        status:
+        - needs_action
+        - completed
+      response_variable: liste
+    - repeat:
+        for_each: '{{ state_attr(''input_select.ir_gerat'', ''options'') }}'
+        sequence:
+        - variables:
+            tasten: '{% set prefix = repeat.item ~ '' | '' %}{% set ns = namespace(t=[]) %}{% for s in liste[''todo.ir_codes''][''items''] | map(attribute=''summary'') %}{% if s.startswith(prefix) %}{%
+              set ns.t = ns.t + [s[prefix | length:] | trim] %}{% endif %}{% endfor %}{{ ns.t | sort }}'
+        - action: input_select.set_options
+          target:
+            entity_id: input_select.ir_tasten_{{ repeat.item | slugify }}
+          data:
+            options: '{{ tasten if tasten | count > 0 else [''– noch keine Codes –''] }}'
+          continue_on_error: true
+    - variables:
+        sender_neu: '{% set ns = namespace(n=[]) %}{% for d in integration_entities(''zha'') | map(''device_id'') | reject(''none'') | unique %}{% if device_attr(d, ''model'') == ''ZG-IR01'' %}{% set ns.n
+          = ns.n + [device_attr(d, ''name_by_user'') or device_attr(d, ''name'')] %}{% endif %}{% endfor %}{{ [''Alle''] + (ns.n | sort) }}'
+    - if:
+      - condition: template
+        value_template: '{{ sender_neu != state_attr(''input_select.ir_sender'', ''options'') }}'
+      then:
+      - variables:
+          auswahl: '{{ states(''input_select.ir_sender'') }}'
+      - action: input_select.set_options
+        target:
+          entity_id: input_select.ir_sender
+        data:
+          options: '{{ sender_neu }}'
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.ir_sender
+        data:
+          option: '{{ auswahl if auswahl in sender_neu else ''Alle'' }}'
+    - repeat:
+        for_each: '{{ state_attr(''input_select.ir_gerat'', ''options'') }}'
+        sequence:
+        - variables:
+            gs_entity: input_select.ir_sender_{{ repeat.item | slugify }}
+            gs_neu: '{{ [''Standard''] + sender_neu }}'
+        - if:
+          - condition: template
+            value_template: '{{ states(gs_entity) not in [''unknown'', ''unavailable''] and gs_neu != state_attr(gs_entity, ''options'') }}'
+          then:
+          - variables:
+              gs_auswahl: '{{ states(gs_entity) }}'
+          - action: input_select.set_options
+            target:
+              entity_id: '{{ gs_entity }}'
+            data:
+              options: '{{ gs_neu }}'
+          - action: input_select.select_option
+            target:
+              entity_id: '{{ gs_entity }}'
+            data:
+              option: '{{ gs_auswahl if gs_auswahl in gs_neu else ''Standard'' }}'
+automation:
+- id: ir_sender_batterie_schwach
+  alias: IR-Sender Batterie schwach
+  mode: queued
+  triggers:
+  - trigger: numeric_state
+    entity_id:
+    - sensor.YOUR_IR_REMOTE_1_battery
+    - sensor.YOUR_IR_REMOTE_2_battery
+    below: 20
+    for:
+      minutes: 30
+  conditions:
+  - condition: not
+    conditions:
+    - condition: template
+      value_template: '{{ trigger.from_state is none or trigger.from_state.state in [''unavailable'', ''unknown''] }}'
+  actions:
+  - action: persistent_notification.create
+    data:
+      title: 'IR-Sender: Batterie wechseln'
+      message: '{{ trigger.to_state.name }} steht bei {{ trigger.to_state.state }} %.'
+      notification_id: ir_batterie_{{ trigger.entity_id }}

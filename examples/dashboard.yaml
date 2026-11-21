@@ -1,0 +1,47 @@
+# Lovelace dashboard (raw configuration editor). Needs card/ir-remote-card.js registered as
+# a dashboard resource (Settings -> Dashboards -> Resources, type "JavaScript module").
+views:
+  - title: Fernbedienung
+    path: fernbedienung
+    icon: mdi:remote-tv
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        column_span: 2
+        cards:
+          - type: custom:ir-remote-card
+  - title: Anlernen
+    path: anlernen
+    icon: mdi:record-rec
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Neue Taste anlernen
+            icon: mdi:record-rec
+          - type: tile
+            entity: input_select.ir_gerat
+            name: 1 · Für welches Gerät?
+            features: [{type: select-options}]
+            features_position: inline
+          - type: entities
+            entities:
+              - entity: input_text.ir_tastenname
+                name: 2 · Name der Taste
+          - type: tile
+            entity: input_select.ir_sender
+            name: 3 · Welcher Sender lernt?
+            features: [{type: select-options}]
+            features_position: inline
+          - type: tile
+            entity: script.ir_code_lernen
+            name: 4 · Jetzt anlernen
+            icon: mdi:record-circle-outline
+            color: red
+            hide_state: true
+            tap_action: {action: perform-action, perform_action: script.ir_code_lernen}
+          - type: markdown
+            content: "**Status:** {{ states('input_text.ir_status') }}"

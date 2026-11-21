@@ -1,0 +1,4 @@
+zha-quirks==2.4.1
+zha==2.4.3
+pytest
+pytest-asyncio
